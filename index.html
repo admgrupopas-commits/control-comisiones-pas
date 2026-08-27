@@ -48,6 +48,9 @@ type: sistema (sans) para UI, monoespaciada del sistema para fechas/números —
     <select id="responsableFilter">
       <option value="">Todos los responsables</option>
     </select>
+    <select id="liquidaFilter">
+      <option value="">Quién liquida (todos)</option>
+    </select>
     <button id="clearFilters" class="clear-btn">Limpiar filtros</button>
   </div>
 </section>
@@ -126,12 +129,16 @@ section{width:100%;}
 .kpis{background:var(--paper);border-bottom:1px solid var(--line);}
 .kpis-inner{max-width:1180px;margin:0 auto;padding:20px 24px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
 @media (max-width:900px){.kpis-inner{grid-template-columns:repeat(2,1fr);}}
-.kpi{border:1px solid var(--line);background:#fff;border-radius:var(--radius);padding:14px 16px;cursor:pointer;text-align:left;font-family:inherit;transition:transform .12s ease, box-shadow .12s ease;position:relative;}
+.kpi{border:1px solid var(--line);border-top:3px solid currentColor;background:#fff;border-radius:var(--radius);padding:16px;cursor:pointer;text-align:left;font-family:inherit;transition:transform .14s ease, box-shadow .14s ease;position:relative;box-shadow:0 1px 3px rgba(16,35,63,0.05);overflow:hidden;}
 @media (prefers-color-scheme: dark){.kpi{background:#101B29;}}
-.kpi:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(16,35,63,0.10);}
-.kpi.active{box-shadow:inset 0 0 0 2px currentColor;}
-.kpi-value{font-family:var(--mono);font-size:26px;font-weight:700;line-height:1;}
-.kpi-label{margin-top:6px;font-size:12.5px;color:var(--muted);font-weight:600;}
+.kpi::before{content:'';position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;background:currentColor;opacity:0.06;}
+.kpi:hover{transform:translateY(-3px);box-shadow:0 10px 22px rgba(16,35,63,0.14);}
+.kpi.active{box-shadow:inset 0 0 0 2px currentColor, 0 10px 22px rgba(16,35,63,0.14);}
+.kpi-icon-row{display:flex;align-items:center;justify-content:space-between;}
+.kpi-icon-row i{width:18px;height:18px;opacity:0.85;}
+.kpi-value{font-family:var(--mono);font-size:28px;font-weight:800;line-height:1;margin-top:10px;}
+.kpi-label{margin-top:5px;font-size:12.5px;color:var(--muted);font-weight:600;}
+.kpi-pct{margin-top:3px;font-size:11px;color:var(--muted);font-weight:600;opacity:0.8;}
 .kpi-total{color:var(--navy);}
 .kpi-enviado{color:var(--green);}
 .kpi-vencido{color:var(--red);}
@@ -207,19 +214,24 @@ function count(status){ return RECORDS.filter(r => r.status === status).length; 
 
 function renderKPIs(){
   const kpiRow = document.getElementById('kpiRow');
+  const total = RECORDS.length;
+  const pct = v => total === 0 ? '—' : Math.round((v/total)*100) + '% del total';
   const defs = [
-    {key:null, label:'Total de registros', cls:'kpi-total', value: RECORDS.length},
-    {key:'enviado', label:'Enviados', cls:'kpi-enviado', value: count('enviado')},
-    {key:'vencido', label:'Vencidos', cls:'kpi-vencido', value: count('vencido')},
-    {key:'por_vencer', label:'Por vencer', cls:'kpi-por_vencer', value: count('por_vencer')},
-    {key:'a_tiempo', label:'A tiempo', cls:'kpi-a_tiempo', value: count('a_tiempo')},
+    {key:null, label:'Total de registros', cls:'kpi-total', icon:'layers', value: total, sub: RECORDS.length + ' este mes'},
+    {key:'enviado', label:'Enviados', cls:'kpi-enviado', icon:'check-circle-2', value: count('enviado'), sub: pct(count('enviado'))},
+    {key:'vencido', label:'Vencidos', cls:'kpi-vencido', icon:'alert-triangle', value: count('vencido'), sub: pct(count('vencido'))},
+    {key:'por_vencer', label:'Por vencer', cls:'kpi-por_vencer', icon:'clock', value: count('por_vencer'), sub: pct(count('por_vencer'))},
+    {key:'a_tiempo', label:'A tiempo', cls:'kpi-a_tiempo', icon:'shield-check', value: count('a_tiempo'), sub: pct(count('a_tiempo'))},
   ];
   kpiRow.innerHTML = defs.map(d => `
     <button class="kpi ${d.cls} ${activeStatus===d.key ? 'active':''}" data-status="${d.key===null?'':d.key}">
+      <div class="kpi-icon-row"><i data-lucide="${d.icon}"></i></div>
       <div class="kpi-value">${d.value}</div>
       <div class="kpi-label">${d.label}</div>
+      <div class="kpi-pct">${d.sub}</div>
     </button>
   `).join('');
+  if(window.lucide && typeof window.lucide.createIcons === 'function'){ window.lucide.createIcons(); }
   kpiRow.querySelectorAll('.kpi').forEach(btn => {
     btn.addEventListener('click', () => {
       const s = btn.getAttribute('data-status');
@@ -237,6 +249,14 @@ function populateResponsables(){
     opt.value = n; opt.textContent = n;
     sel.appendChild(opt);
   });
+
+  const selL = document.getElementById('liquidaFilter');
+  const liquidas = Array.from(new Set(RECORDS.map(r => r.liquida).filter(Boolean))).sort();
+  liquidas.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    selL.appendChild(opt);
+  });
 }
 
 function parseDDMMYYYY(s){
@@ -249,9 +269,11 @@ function parseDDMMYYYY(s){
 function getFiltered(){
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
   const resp = document.getElementById('responsableFilter').value;
+  const liq = document.getElementById('liquidaFilter').value;
   return RECORDS.filter(r => {
     if(activeStatus && r.status !== activeStatus) return false;
     if(resp && r.responsable !== resp) return false;
+    if(liq && r.liquida !== liq) return false;
     if(q){
       const hay = (r.nombre+' '+r.responsable+' '+r.liquida+' '+r.obs).toLowerCase();
       if(!hay.includes(q)) return false;
@@ -324,10 +346,12 @@ function renderAll(){
 
 document.getElementById('searchInput').addEventListener('input', renderTable);
 document.getElementById('responsableFilter').addEventListener('change', renderTable);
+document.getElementById('liquidaFilter').addEventListener('change', renderTable);
 document.getElementById('clearFilters').addEventListener('click', () => {
   activeStatus = null;
   document.getElementById('searchInput').value = '';
   document.getElementById('responsableFilter').value = '';
+  document.getElementById('liquidaFilter').value = '';
   renderAll();
 });
 document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -344,6 +368,8 @@ document.getElementById('asofDate').textContent = HOY;
 populateResponsables();
 renderAll();
 </script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script>if(window.lucide){ lucide.createIcons(); }</script>
 
 </body>
 </html>
