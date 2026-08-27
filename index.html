@@ -1,0 +1,349 @@
+<!-- design-decisions
+role: internal operations dashboard (panel de control interno de un equipo de administración de seguros)
+stance: cada fila roja o amarilla es una comisión que un productor todavía no cobró por un atraso interno — el panel existe para que eso nunca se pierda en una hoja de cálculo de 100+ filas
+claims:
+  1. "¿cómo estamos hoy?" -> 5 tarjetas KPI con semáforo (total / enviados / vencidos / por vencer / a tiempo)
+  2. "¿quién necesita acción ahora?" -> tabla ordenada por urgencia (vencidos primero), no por orden de carga
+  3. "¿de quién depende cada uno?" -> filtro por responsable, para que cada persona vea solo lo suyo
+interaction per claim: las tarjetas KPI son botones-filtro (clic en "Vencidos" filtra la tabla a vencidos) — quitar la interacción mata el uso real del panel, no es decorativo
+sting: abrís el panel y en 2 segundos ves, en rojo, a quién le falta el mail de comisión y hace cuántos días
+palette: navy #10233F (marca/estructura), paper #F4F6F8 (fondo), red #C0392B/#FDECEA (vencido), amber #B7791F/#FDF3DC (por vencer), green #1E8E5A/#E7F7EF (a tiempo), slate #5B6B7C (enviado/neutro)
+type: sistema (sans) para UI, monoespaciada del sistema para fechas/números — un panel operativo no necesita tipografía de autor
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Comisiones — Grupo PAS</title>
+</head>
+<body>
+
+<section class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark">PAS</span>
+      <div class="brand-text">
+        <h1>Control de comisiones</h1>
+        <p id="subtitle">Cargando…</p>
+      </div>
+    </div>
+    <div class="asof">
+      <span class="asof-label">Estado al</span>
+      <span class="asof-date" id="asofDate">—</span>
+    </div>
+  </div>
+</section>
+
+<section class="kpis">
+  <div class="kpis-inner" id="kpiRow"></div>
+</section>
+
+<section class="controls">
+  <div class="controls-inner">
+    <div class="search-wrap">
+      <i data-lucide="search"></i>
+      <input type="text" id="searchInput" placeholder="Buscar por nombre, responsable o quien liquida…">
+    </div>
+    <select id="responsableFilter">
+      <option value="">Todos los responsables</option>
+    </select>
+    <button id="clearFilters" class="clear-btn">Limpiar filtros</button>
+  </div>
+</section>
+
+<section class="table-section">
+  <div class="table-inner">
+    <table id="dataTable">
+      <thead>
+        <tr>
+          <th data-sort="nombre">Nombre</th>
+          <th data-sort="fecha_hasta">Fecha límite</th>
+          <th data-sort="dias_restantes">Días</th>
+          <th data-sort="responsable">Responsable</th>
+          <th data-sort="liquida">Liquida</th>
+          <th data-sort="estado">Estado</th>
+          <th>Obs.</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+    <p class="empty-state" id="emptyState" style="display:none;">No hay registros que coincidan con el filtro actual.</p>
+  </div>
+</section>
+
+<section class="footer">
+  <div class="footer-inner">
+    <p><strong>Esto es una foto del momento, no una conexión en vivo al Excel.</strong> Para actualizarlo, subí el Excel nuevo en el chat con Claude y pedile que regenere el panel.</p>
+    <p class="footer-legend">
+      <span class="legend-dot legend-green"></span> Enviado
+      <span class="legend-dot legend-amber"></span> Por vencer (1 día o menos)
+      <span class="legend-dot legend-red"></span> Vencido y sin enviar
+      <span class="legend-dot legend-blue"></span> A tiempo (pendiente, con margen)
+    </p>
+  </div>
+</section>
+
+<style>
+:root{
+  --navy:#10233F;
+  --navy-2:#16324F;
+  --paper:#F4F6F8;
+  --ink:#16212E;
+  --muted:#5B6B7C;
+  --line:#E3E7EC;
+  --red:#C0392B; --red-bg:#FDECEA;
+  --amber:#9C6B0F; --amber-bg:#FDF3DC;
+  --green:#1E8E5A; --green-bg:#E7F7EF;
+  --blue:#2E6DA4; --blue-bg:#E8F1FA;
+  --slate:#5B6B7C; --slate-bg:#EDEFF2;
+  --radius:10px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0B1420; --ink:#E7ECF2; --muted:#9AA7B5; --line:#233042;
+    --red-bg:#3A1E1C; --amber-bg:#3A2E12; --green-bg:#12301F; --blue-bg:#12233A; --slate-bg:#1C2733;
+  }
+}
+*{box-sizing:border-box;}
+body{margin:0;font-family:var(--sans);background:var(--paper);color:var(--ink);}
+section{width:100%;}
+
+/* Topbar */
+.topbar{background:linear-gradient(180deg,var(--navy),var(--navy-2));color:#fff;}
+.topbar-inner{max-width:1180px;margin:0 auto;padding:22px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+.brand{display:flex;align-items:center;gap:14px;}
+.brand-mark{width:42px;height:42px;border-radius:9px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;letter-spacing:0.5px;}
+.brand-text h1{margin:0;font-size:19px;font-weight:700;letter-spacing:-0.01em;}
+.brand-text p{margin:2px 0 0;font-size:12.5px;color:rgba(255,255,255,0.65);}
+.asof{text-align:right;}
+.asof-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:rgba(255,255,255,0.55);}
+.asof-date{display:block;font-family:var(--mono);font-size:15px;font-weight:600;margin-top:2px;}
+
+/* KPIs */
+.kpis{background:var(--paper);border-bottom:1px solid var(--line);}
+.kpis-inner{max-width:1180px;margin:0 auto;padding:20px 24px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
+@media (max-width:900px){.kpis-inner{grid-template-columns:repeat(2,1fr);}}
+.kpi{border:1px solid var(--line);background:#fff;border-radius:var(--radius);padding:14px 16px;cursor:pointer;text-align:left;font-family:inherit;transition:transform .12s ease, box-shadow .12s ease;position:relative;}
+@media (prefers-color-scheme: dark){.kpi{background:#101B29;}}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(16,35,63,0.10);}
+.kpi.active{box-shadow:inset 0 0 0 2px currentColor;}
+.kpi-value{font-family:var(--mono);font-size:26px;font-weight:700;line-height:1;}
+.kpi-label{margin-top:6px;font-size:12.5px;color:var(--muted);font-weight:600;}
+.kpi-total{color:var(--navy);}
+.kpi-enviado{color:var(--green);}
+.kpi-vencido{color:var(--red);}
+.kpi-por_vencer{color:var(--amber);}
+.kpi-a_tiempo{color:var(--blue);}
+
+/* Controls */
+.controls{background:var(--paper);}
+.controls-inner{max-width:1180px;margin:0 auto;padding:14px 24px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.search-wrap{flex:1 1 280px;position:relative;display:flex;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:0 12px;}
+@media (prefers-color-scheme: dark){.search-wrap, select{background:#101B29;}}
+.search-wrap i{width:16px;height:16px;color:var(--muted);flex-shrink:0;}
+.search-wrap input{border:none;background:transparent;padding:10px 8px;font-size:14px;width:100%;color:var(--ink);outline:none;font-family:var(--sans);}
+select{padding:10px 12px;border-radius:8px;border:1px solid var(--line);font-size:14px;color:var(--ink);font-family:var(--sans);}
+.clear-btn{padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:13px;cursor:pointer;font-family:var(--sans);}
+.clear-btn:hover{color:var(--ink);border-color:var(--muted);}
+
+/* Table */
+.table-section{background:var(--paper);}
+.table-inner{max-width:1180px;margin:0 auto;padding:16px 24px 40px;}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);}
+@media (prefers-color-scheme: dark){table{background:#101B29;}}
+thead th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap;}
+thead th:hover{color:var(--ink);}
+tbody td{padding:11px 14px;font-size:13.5px;border-bottom:1px solid var(--line);vertical-align:top;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:rgba(16,35,63,0.03);}
+.td-nombre{font-weight:600;}
+.td-mono{font-family:var(--mono);font-size:13px;white-space:nowrap;}
+.td-obs{color:var(--muted);font-size:12.5px;max-width:220px;}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap;}
+.badge-vencido{background:var(--red-bg);color:var(--red);}
+.badge-por_vencer{background:var(--amber-bg);color:var(--amber);}
+.badge-a_tiempo{background:var(--blue-bg);color:var(--blue);}
+.badge-enviado{background:var(--green-bg);color:var(--green);}
+.badge-sin_fecha{background:var(--slate-bg);color:var(--slate);}
+.empty-state{text-align:center;color:var(--muted);padding:40px 0;font-size:14px;}
+
+/* Footer */
+.footer{background:var(--paper);border-top:1px solid var(--line);}
+.footer-inner{max-width:1180px;margin:0 auto;padding:18px 24px 34px;color:var(--muted);font-size:12.5px;line-height:1.6;}
+.footer-legend{margin-top:8px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;}
+.legend-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:2px;}
+.legend-red{background:var(--red);}
+.legend-amber{background:var(--amber);}
+.legend-green{background:var(--green);}
+.legend-blue{background:var(--blue);}
+.legend-slate{background:var(--slate);}
+
+@media (prefers-reduced-motion: reduce){
+  .kpi{transition:none;}
+}
+</style>
+
+<script>
+const RECORDS = [{"nombre":"Veronica Idarraz","fecha_recibido":"10/07/2026","fecha_hasta":"10/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Pezo Santiago","fecha_recibido":"20/07/2026","fecha_hasta":"03/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"RIVA","status":"enviado"},{"nombre":"diarteconsultora@gmail.com","fecha_recibido":"22/07/2026","fecha_hasta":"04/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"ANAHI FERREYRA","fecha_recibido":"22/07/2026","fecha_hasta":"04/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Marcos Bozian","fecha_recibido":"22/07/2026","fecha_hasta":"04/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"Fran","obs":"","status":"enviado"},{"nombre":"Udrizar Marcelo","fecha_recibido":"24/07/2026","fecha_hasta":"07/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Ercole Analia","fecha_recibido":"24/07/2026","fecha_hasta":"15/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"Riva","status":"enviado"},{"nombre":"Lucas Martinez","fecha_recibido":"27/07/2026","fecha_hasta":"08/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Bustamante Gaston","fecha_recibido":"24/07/2026","fecha_hasta":"08/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Carolina Blanco","fecha_recibido":"27/07/2026","fecha_hasta":"10/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"Fran","obs":"","status":"enviado"},{"nombre":"Claudio salcedo","fecha_recibido":"27/07/2026","fecha_hasta":"10/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"YAMILA","obs":"","status":"enviado"},{"nombre":"Mariela Edith Bertino","fecha_recibido":"30/07/2026","fecha_hasta":"13/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Luis Campos","fecha_recibido":"30/07/2026","fecha_hasta":"13/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Fran","obs":"","status":"enviado"},{"nombre":"Gaston benitez","fecha_recibido":"30/07/2026","fecha_hasta":"13/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Luciano Trabuco","fecha_recibido":"30/07/2026","fecha_hasta":"13/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Florencia Krell","fecha_recibido":"30/07/2026","fecha_hasta":"13/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"federacion","status":"enviado"},{"nombre":"Vanesa Barrionuevo","fecha_recibido":"30/07/2026","fecha_hasta":"13/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"sancor","status":"enviado"},{"nombre":"Flores Andres","fecha_recibido":"30/07/2026","fecha_hasta":"13/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"actualizado 6/8","status":"enviado"},{"nombre":"Edel Saltos","fecha_recibido":"30/07/2026","fecha_hasta":"13/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"productorasasesorasdeseguros@gmail.com","fecha_recibido":"31/07/2026","fecha_hasta":"14/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"riva contr cod propio","status":"enviado"},{"nombre":"Andrea mariela Curto","fecha_recibido":"31/07/2026","fecha_hasta":"14/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"Riva","status":"enviado"},{"nombre":"mancini","fecha_recibido":"31/07/2026","fecha_hasta":"14/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"ver poliza nueva","status":"enviado"},{"nombre":"Veronica Garcia","fecha_recibido":"01/08/2026","fecha_hasta":"03/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"cristian D Agostino","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Fran","obs":"","status":"enviado"},{"nombre":"EDUARDO ZORZINI","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Quinteros Laura","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"ok","status":"enviado"},{"nombre":"sofia daghero","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Sesmilo Natalia","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"José Fernández Madero","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"actualizado 12/8","status":"enviado"},{"nombre":"Elsner Andres","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"actualizado 12/8","status":"enviado"},{"nombre":"ani andreoli","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"info@onetouchseguros.com.ar","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":".","estado":"enviada","liquida":"YAMILA","obs":"ok","status":"enviado"},{"nombre":"Vanesa Galletti","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Luciano Schettino","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"maria florencia pronzati","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Orlando Acciari","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Laura Ferragout","fecha_recibido":"04/08/2026","fecha_hasta":"19/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Firpo Alejo","fecha_recibido":"04/08/2026","fecha_hasta":"19/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"act 17/8","status":"enviado"},{"nombre":"María Fernanda Cabrera Lacamoira","fecha_recibido":"04/08/2026","fecha_hasta":"19/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"David Del Bel","fecha_recibido":"04/08/2026","fecha_hasta":"19/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"belen chavez","fecha_recibido":"04/08/2026","fecha_hasta":"19/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Fran","obs":"","status":"enviado"},{"nombre":"Gabriel Asteggiano","fecha_recibido":"04/08/2026","fecha_hasta":"19/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Cigliutti Guido","fecha_recibido":"04/08/2026","fecha_hasta":"19/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Brenda falco","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Abad Micaela","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Ines Briend","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"act 17/8","status":"enviado"},{"nombre":"silvina ahumada","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"act 17/8","status":"enviado"},{"nombre":"Alan Venier","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"ok","status":"enviado"},{"nombre":"Flavio bernardi","fecha_recibido":"03/0-","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Guido","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Eugenia Ponce","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Fran","obs":"","status":"enviado"},{"nombre":"Leonel Damico","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Vicario Vanesa","fecha_recibido":"03/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Juan Carlos Naipauer","fecha_recibido":"04/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Guido","estado":"enviada","liquida":"ALICIA","obs":"x","status":"enviado"},{"nombre":"Giuu Colella","fecha_recibido":"04/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"act 17/8","status":"enviado"},{"nombre":"Bustos Rolando","fecha_recibido":"","fecha_hasta":"06/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"suarez jorge","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Guido","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Natividad Brambilla","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Fran","obs":"","status":"enviado"},{"nombre":"Valli Leandro","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"Riva ok","status":"enviado"},{"nombre":"info@segurosortiz.com.ar","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Cortez Lucia","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"act 21/8","status":"enviado"},{"nombre":"Rosario Rodriguez","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Guido","estado":"enviada","liquida":"YAMILA","obs":"OK","status":"enviado"},{"nombre":"ADRIANA Giampieri","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Cecilia Negro","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"miproductoradeseguros@outlook.com","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Federico Roque","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Larrosa Cristain","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Fran","obs":"","status":"enviado"},{"nombre":"SEGURPEA NET","fecha_recibido":"05/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"","status":"enviado"},{"nombre":"Agustín Rivarola","fecha_recibido":"05/08/","fecha_hasta":"07/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Elisa Eva Montenegro Muñoz","fecha_recibido":"03/08/2026","fecha_hasta":"07/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Jara eremias","fecha_recibido":"03/08/2026","fecha_hasta":"07/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"sofia cabrera","fecha_recibido":"03/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Franco Valdivia","fecha_recibido":"03/08/2026","fecha_hasta":"20/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"falta atm","status":"enviado"},{"nombre":"Mirta Balcarce","fecha_recibido":"06/08/2026","fecha_hasta":"21/08/2026","dias_restantes":-6,"responsable":".","estado":"---","liquida":"ALICIA","obs":"ver adelantos","status":"vencido"},{"nombre":"oscar azzolini","fecha_recibido":"06/08/2026","fecha_hasta":"21/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"act20/8","status":"enviado"},{"nombre":"Lara Belén Impa","fecha_recibido":"06/08/2026","fecha_hasta":"21/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"act20/8","status":"enviado"},{"nombre":"Sebastian prato","fecha_recibido":"06/08/2026","fecha_hasta":"21/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"","status":"enviado"},{"nombre":"ygproductores@hotmail.com","fecha_recibido":"06/08/2026","fecha_hasta":"21/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Maximiliano Silva","fecha_recibido":"07/08/2026","fecha_hasta":"24/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"act20/8","status":"enviado"},{"nombre":"Veronica Ildarraz","fecha_recibido":"07/08/2026","fecha_hasta":"24/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Jorge Herrero","fecha_recibido":"07/08/2026","fecha_hasta":"24/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Thomas","obs":"OK","status":"enviado"},{"nombre":"Bessiere Carolina","fecha_recibido":"07/08/2026","fecha_hasta":"24/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Luciana gomez","fecha_recibido":"08/08/2026","fecha_hasta":"25/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"revisar","status":"enviado"},{"nombre":"Ivana Olmos","fecha_recibido":"08/08/2026","fecha_hasta":"25/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"camila tolosa","fecha_recibido":"08/08/2026","fecha_hasta":"25/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"act 22/8","status":"enviado"},{"nombre":"Adrian quinteros","fecha_recibido":"08/08/2026","fecha_hasta":"25/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Maicon Sosa Pacheco","fecha_recibido":"08/08/2026","fecha_hasta":"25/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"Riva","status":"enviado"},{"nombre":"Gonzalo Sucheki","fecha_recibido":"08/08/2026","fecha_hasta":"25/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Franco Menegaldo","fecha_recibido":"10/08/2026","fecha_hasta":"25/08/2026","dias_restantes":null,"responsable":"Franco","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Marquez jesica","fecha_recibido":"10/08/2026","fecha_hasta":"25/08/2026","dias_restantes":-2,"responsable":".","estado":"---","liquida":"Vero","obs":"riva","status":"vencido"},{"nombre":"Golnner fabian","fecha_recibido":"10/08/2026","fecha_hasta":"25/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Saluzo gisela","fecha_recibido":"11/08/2026","fecha_hasta":"26/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Gonzalo Sanchez","fecha_recibido":"11/08/2026","fecha_hasta":"26/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Corvalan Cristian","fecha_recibido":"11/08/2026","fecha_hasta":"12/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"YAMILA","obs":"","status":"enviado"},{"nombre":"Nicolás Cabrera","fecha_recibido":"13/08/2026","fecha_hasta":"26/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Fernando Hanon","fecha_recibido":"03/08/2026","fecha_hasta":"13/08/2026","dias_restantes":-14,"responsable":"Vero","estado":"enviada a confirmación","liquida":"Vero","obs":"","status":"vencido"},{"nombre":"Sofia Franco","fecha_recibido":"12/08/2026","fecha_hasta":"27/08/2026","dias_restantes":0,"responsable":"Vero","estado":"enviada a confirmación","liquida":"ALICIA","obs":"cargada sist 21/8","status":"por_vencer"},{"nombre":"Edgar Gabriel Aiassa","fecha_recibido":"11/08/2026","fecha_hasta":"26/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"cargada sist 21/8","status":"enviado"},{"nombre":"Marcelo Ostroñuk","fecha_recibido":"13/08/2026","fecha_hasta":"27/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Daniel Moyano","fecha_recibido":"13/08/2026","fecha_hasta":"27/08/2026","dias_restantes":null,"responsable":"Luciano","estado":"enviada","liquida":"ALICIA","obs":"pasar cartera","status":"enviado"},{"nombre":"VELEZ SEGUROS","fecha_recibido":"13/08/2026","fecha_hasta":"27/08/2026","dias_restantes":0,"responsable":"Vero","estado":"---","liquida":"YAMILA","obs":"","status":"por_vencer"},{"nombre":"contacto@fabiancardozopas.com.ar","fecha_recibido":"13/08/2026","fecha_hasta":"27/08/2026","dias_restantes":0,"responsable":"Vero","estado":"enviada a confirmación","liquida":"Thomas","obs":"OK","status":"por_vencer"},{"nombre":"FERREYRA VANINA","fecha_recibido":"13/08/2026","fecha_hasta":"27/08/2026","dias_restantes":0,"responsable":"Vero","estado":"---","liquida":"Thomas","obs":"Consulta PAS","status":"por_vencer"},{"nombre":"Demito dana","fecha_recibido":"14/08/2026","fecha_hasta":"28/08/2026","dias_restantes":1,"responsable":".","estado":"---","liquida":"ALICIA","obs":"","status":"por_vencer"},{"nombre":"Marcos Bozian","fecha_recibido":"11/08/2026","fecha_hasta":"26/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"ya se liq4/8","status":"enviado"},{"nombre":"Roca Joaquin","fecha_recibido":"","fecha_hasta":"27/08/2026","dias_restantes":0,"responsable":"Guido","estado":"---","liquida":"ALICIA","obs":"","status":"por_vencer"},{"nombre":"Monzon Javier","fecha_recibido":"18/08/2026","fecha_hasta":"31/08/2026","dias_restantes":4,"responsable":"Vero","estado":"---","liquida":"YAMILA","obs":"","status":"a_tiempo"},{"nombre":"Baigorria Roberto","fecha_recibido":"18/08/2026","fecha_hasta":"31/08/2026","dias_restantes":4,"responsable":".","estado":"---","liquida":"Vero","obs":"","status":"a_tiempo"},{"nombre":"Hernandez carlos","fecha_recibido":"18/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"TOBIAS CAPPUZZELLO","fecha_recibido":"18/08/2026","fecha_hasta":"31/08/2026","dias_restantes":4,"responsable":"Vero","estado":"---","liquida":"ALICIA","obs":"","status":"a_tiempo"},{"nombre":"Tineo federico","fecha_recibido":"18/08/2026","fecha_hasta":"18/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Carlos araya","fecha_recibido":"18/08/2026","fecha_hasta":"31/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Albertengo Martin","fecha_recibido":"18/08/2026","fecha_hasta":"31/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"YAMILA","obs":"","status":"enviado"},{"nombre":"Rocca Agustin","fecha_recibido":"24/08/2026","fecha_hasta":"24/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"},{"nombre":"Gubana Ramiro","fecha_recibido":"24/08/2026","fecha_hasta":"","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"ALICIA","obs":"","status":"enviado"},{"nombre":"Matias Andreau","fecha_recibido":"24/08/2026","fecha_hasta":"27/08/2026","dias_restantes":null,"responsable":"Vero","estado":"enviada","liquida":"Vero","obs":"","status":"enviado"}]
+;
+const HOY = "27/08/2026";
+
+const STATUS_META = {
+  vencido:    {label:'Vencido',    order:0},
+  por_vencer: {label:'Por vencer', order:1},
+  a_tiempo:   {label:'A tiempo',   order:2},
+  enviado:    {label:'Enviado',    order:3},
+  sin_fecha:  {label:'Sin fecha',  order:4},
+};
+
+let activeStatus = null;
+let sortKey = 'status_order';
+let sortDir = 1;
+
+function count(status){ return RECORDS.filter(r => r.status === status).length; }
+
+function renderKPIs(){
+  const kpiRow = document.getElementById('kpiRow');
+  const defs = [
+    {key:null, label:'Total de registros', cls:'kpi-total', value: RECORDS.length},
+    {key:'enviado', label:'Enviados', cls:'kpi-enviado', value: count('enviado')},
+    {key:'vencido', label:'Vencidos', cls:'kpi-vencido', value: count('vencido')},
+    {key:'por_vencer', label:'Por vencer', cls:'kpi-por_vencer', value: count('por_vencer')},
+    {key:'a_tiempo', label:'A tiempo', cls:'kpi-a_tiempo', value: count('a_tiempo')},
+  ];
+  kpiRow.innerHTML = defs.map(d => `
+    <button class="kpi ${d.cls} ${activeStatus===d.key ? 'active':''}" data-status="${d.key===null?'':d.key}">
+      <div class="kpi-value">${d.value}</div>
+      <div class="kpi-label">${d.label}</div>
+    </button>
+  `).join('');
+  kpiRow.querySelectorAll('.kpi').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = btn.getAttribute('data-status');
+      activeStatus = (s === '') ? null : s;
+      renderAll();
+    });
+  });
+}
+
+function populateResponsables(){
+  const sel = document.getElementById('responsableFilter');
+  const names = Array.from(new Set(RECORDS.map(r => r.responsable).filter(Boolean))).sort();
+  names.forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    sel.appendChild(opt);
+  });
+}
+
+function parseDDMMYYYY(s){
+  if(!s) return null;
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(!m) return null;
+  return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
+}
+
+function getFiltered(){
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const resp = document.getElementById('responsableFilter').value;
+  return RECORDS.filter(r => {
+    if(activeStatus && r.status !== activeStatus) return false;
+    if(resp && r.responsable !== resp) return false;
+    if(q){
+      const hay = (r.nombre+' '+r.responsable+' '+r.liquida+' '+r.obs).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function sortRecords(list){
+  return list.slice().sort((a,b) => {
+    let av, bv;
+    if(sortKey === 'status_order'){
+      av = STATUS_META[a.status].order; bv = STATUS_META[b.status].order;
+      if(av === bv){
+        av = a.dias_restantes ?? 9999; bv = b.dias_restantes ?? 9999;
+      }
+    } else if(sortKey === 'dias_restantes'){
+      av = a.dias_restantes ?? 9999; bv = b.dias_restantes ?? 9999;
+    } else if(sortKey === 'fecha_hasta'){
+      av = parseDDMMYYYY(a.fecha_hasta) || new Date(0);
+      bv = parseDDMMYYYY(b.fecha_hasta) || new Date(0);
+    } else {
+      av = (a[sortKey]||'').toLowerCase(); bv = (b[sortKey]||'').toLowerCase();
+    }
+    if(av < bv) return -1*sortDir;
+    if(av > bv) return 1*sortDir;
+    return 0;
+  });
+}
+
+function badge(r){
+  const meta = STATUS_META[r.status];
+  let extra = '';
+  if(r.status === 'vencido' && r.dias_restantes !== null) extra = ` · hace ${Math.abs(r.dias_restantes)}d`;
+  if(r.status === 'por_vencer' && r.dias_restantes !== null) extra = r.dias_restantes <= 0 ? ' · hoy' : ' · mañana';
+  return `<span class="badge badge-${r.status}">${meta.label}${extra}</span>`;
+}
+
+function renderTable(){
+  const list = sortRecords(getFiltered());
+  const body = document.getElementById('tableBody');
+  const empty = document.getElementById('emptyState');
+  if(list.length === 0){
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  body.innerHTML = list.map(r => `
+    <tr>
+      <td class="td-nombre">${escapeHtml(r.nombre)}</td>
+      <td class="td-mono">${r.fecha_hasta || '—'}</td>
+      <td class="td-mono">${r.dias_restantes === null ? '—' : (r.dias_restantes < 0 ? r.dias_restantes : '+'+r.dias_restantes)}</td>
+      <td>${escapeHtml(r.responsable) || '—'}</td>
+      <td>${escapeHtml(r.liquida) || '—'}</td>
+      <td>${badge(r)}</td>
+      <td class="td-obs">${escapeHtml(r.obs) || ''}</td>
+    </tr>
+  `).join('');
+}
+
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderAll(){
+  renderKPIs();
+  renderTable();
+}
+
+document.getElementById('searchInput').addEventListener('input', renderTable);
+document.getElementById('responsableFilter').addEventListener('change', renderTable);
+document.getElementById('clearFilters').addEventListener('click', () => {
+  activeStatus = null;
+  document.getElementById('searchInput').value = '';
+  document.getElementById('responsableFilter').value = '';
+  renderAll();
+});
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.getAttribute('data-sort');
+    if(sortKey === key){ sortDir *= -1; } else { sortKey = key; sortDir = 1; }
+    renderTable();
+  });
+});
+
+document.getElementById('subtitle').textContent = 'Agosto 2026 · ' + RECORDS.length + ' registros';
+document.getElementById('asofDate').textContent = HOY;
+
+populateResponsables();
+renderAll();
+</script>
+
+</body>
+</html>
