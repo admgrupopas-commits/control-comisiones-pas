@@ -45,12 +45,18 @@ type: sistema (sans) para UI, monoespaciada del sistema para fechas/números —
       <i data-lucide="search"></i>
       <input type="text" id="searchInput" placeholder="Buscar por nombre, responsable o quien liquida…">
     </div>
-    <select id="responsableFilter">
-      <option value="">Todos los responsables</option>
-    </select>
-    <select id="liquidaFilter">
-      <option value="">Quién liquida (todos)</option>
-    </select>
+    <div class="select-wrap">
+      <i data-lucide="user"></i>
+      <select id="responsableFilter">
+        <option value="">Todos los responsables</option>
+      </select>
+    </div>
+    <div class="select-wrap">
+      <i data-lucide="badge-check"></i>
+      <select id="liquidaFilter">
+        <option value="">Quién liquida (todos)</option>
+      </select>
+    </div>
     <button id="clearFilters" class="clear-btn">Limpiar filtros</button>
   </div>
 </section>
@@ -129,14 +135,18 @@ section{width:100%;}
 .kpis{background:var(--paper);border-bottom:1px solid var(--line);}
 .kpis-inner{max-width:1180px;margin:0 auto;padding:20px 24px;display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
 @media (max-width:900px){.kpis-inner{grid-template-columns:repeat(2,1fr);}}
-.kpi{border:1px solid var(--line);border-top:3px solid currentColor;background:#fff;border-radius:var(--radius);padding:16px;cursor:pointer;text-align:left;font-family:inherit;transition:transform .14s ease, box-shadow .14s ease;position:relative;box-shadow:0 1px 3px rgba(16,35,63,0.05);overflow:hidden;}
+.kpi{border:1px solid var(--line);background:#fff;border-radius:14px;padding:16px;cursor:pointer;text-align:left;font-family:inherit;transition:transform .14s ease, box-shadow .14s ease;position:relative;box-shadow:0 1px 3px rgba(16,35,63,0.05);}
 @media (prefers-color-scheme: dark){.kpi{background:#101B29;}}
-.kpi::before{content:'';position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;background:currentColor;opacity:0.06;}
 .kpi:hover{transform:translateY(-3px);box-shadow:0 10px 22px rgba(16,35,63,0.14);}
 .kpi.active{box-shadow:inset 0 0 0 2px currentColor, 0 10px 22px rgba(16,35,63,0.14);}
-.kpi-icon-row{display:flex;align-items:center;justify-content:space-between;}
-.kpi-icon-row i{width:18px;height:18px;opacity:0.85;}
-.kpi-value{font-family:var(--mono);font-size:28px;font-weight:800;line-height:1;margin-top:10px;}
+.kpi-badge{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 4px 10px rgba(0,0,0,0.18);}
+.kpi-badge i{width:21px;height:21px;stroke-width:2.4;}
+.kpi-badge-total{background:linear-gradient(145deg,var(--navy),var(--navy-2));}
+.kpi-badge-enviado{background:linear-gradient(145deg,#28A873,var(--green));}
+.kpi-badge-vencido{background:linear-gradient(145deg,#D9534F,var(--red));}
+.kpi-badge-por_vencer{background:linear-gradient(145deg,#D9A032,var(--amber));}
+.kpi-badge-a_tiempo{background:linear-gradient(145deg,#3E82C4,var(--blue));}
+.kpi-value{font-family:var(--mono);font-size:28px;font-weight:800;line-height:1;margin-top:12px;}
 .kpi-label{margin-top:5px;font-size:12.5px;color:var(--muted);font-weight:600;}
 .kpi-pct{margin-top:3px;font-size:11px;color:var(--muted);font-weight:600;opacity:0.8;}
 .kpi-total{color:var(--navy);}
@@ -152,7 +162,11 @@ section{width:100%;}
 @media (prefers-color-scheme: dark){.search-wrap, select{background:#101B29;}}
 .search-wrap i{width:16px;height:16px;color:var(--muted);flex-shrink:0;}
 .search-wrap input{border:none;background:transparent;padding:10px 8px;font-size:14px;width:100%;color:var(--ink);outline:none;font-family:var(--sans);}
-select{padding:10px 12px;border-radius:8px;border:1px solid var(--line);font-size:14px;color:var(--ink);font-family:var(--sans);}
+select{padding:10px 12px;border-radius:8px;border:1px solid var(--line);font-size:14px;color:var(--ink);font-family:var(--sans);background:transparent;}
+.select-wrap{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:0 12px;}
+@media (prefers-color-scheme: dark){.select-wrap{background:#101B29;}}
+.select-wrap i{width:16px;height:16px;color:var(--muted);flex-shrink:0;}
+.select-wrap select{border:none;padding:10px 6px 10px 0;}
 .clear-btn{padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:13px;cursor:pointer;font-family:var(--sans);}
 .clear-btn:hover{color:var(--ink);border-color:var(--muted);}
 
@@ -225,7 +239,7 @@ function renderKPIs(){
   ];
   kpiRow.innerHTML = defs.map(d => `
     <button class="kpi ${d.cls} ${activeStatus===d.key ? 'active':''}" data-status="${d.key===null?'':d.key}">
-      <div class="kpi-icon-row"><i data-lucide="${d.icon}"></i></div>
+      <div class="kpi-badge kpi-badge-${d.key===null?'total':d.key}"><i data-lucide="${d.icon}"></i></div>
       <div class="kpi-value">${d.value}</div>
       <div class="kpi-label">${d.label}</div>
       <div class="kpi-pct">${d.sub}</div>
